@@ -1,6 +1,8 @@
 package main
 
 import (
+	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	"regexp"
@@ -35,6 +37,19 @@ func GetUser(c *gin.Context) {
 	var user User
 	DB.First(&user, c.Param("id"))
 	c.JSON(http.StatusOK, user)
+}
+
+func GetUserByEmail(email string) (User, error) {
+	var user User
+	if err := DB.First(&user, "email = ?", email).Error; err != nil {
+		fmt.Println(err)
+		if err == gorm.ErrRecordNotFound {
+       		return User{}, errors.New("User not found")
+    	} else {
+    		return User{}, errors.New("Failed to fetch user")
+    	}
+	}
+	return user, nil
 }
 
 func CreateUser(c *gin.Context) {
@@ -169,7 +184,7 @@ func Login(c *gin.Context) {
 	// Replace this with your DB query to fetch the user based on the email
 	foundUser, err := GetUserByEmail(user.Email)
 	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid email or password"})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": err})
 		return
 	}
 
@@ -181,7 +196,13 @@ func Login(c *gin.Context) {
 	}
 
 	// Password is correct, user is authenticated
-	c.JSON(http.StatusOK, gin.H{"message": "Login successful"})
+	token, err := GenerateToken(foundUser.ID, foundUser.Email)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Error generating token"})		
+		return
+	}
+	
+	c.JSON(http.StatusOK, gin.H{"message": "Login successful", "token": token})
 }
 
 // Helpers
