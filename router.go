@@ -9,6 +9,8 @@ import (
 
 func RunRoutes(r *gin.Engine, db *gorm.DB) {
 
+	r.Static("/avatars", "./avatars")
+
 	// Products
 	r.GET("/products", GetAllProducts)
 	r.GET("/products/:id", GetProduct)
@@ -35,6 +37,7 @@ func RunRoutes(r *gin.Engine, db *gorm.DB) {
 
 		var user User
 		DB.First(&user, id)
-		c.JSON(http.StatusOK, gin.H{"id": user.ID, "email": user.Email, "created": user.CreatedAt})
+		USER = user
+		c.JSON(http.StatusOK, gin.H{"id": user.ID, "email": user.Email, "avatar": user.Avatar, "created": user.CreatedAt})
 	})
 }

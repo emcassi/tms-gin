@@ -16,7 +16,7 @@ func main() {
 	err := DB.AutoMigrate(&Product{}, &User{})
 
 	if err != nil {
-		panic("failed to migrate database" + err.Error())
+		panic("failed to migrate database: " + err.Error())
 	}
 
 	r := gin.Default()

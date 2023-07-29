@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"path/filepath"
 	"regexp"
 	"time"
 
@@ -27,6 +28,10 @@ type Claim struct {
 	Email  string `json:"email"`
 	jwt.StandardClaims
 }
+
+var (
+	USER User
+)
 
 func GetAllUsers(c *gin.Context) {
 	var users []User
@@ -115,14 +120,27 @@ func DeleteUser(c *gin.Context) {
 }
 
 func SetAvatar(c *gin.Context) {
-
 	_, header, err := c.Request.FormFile("avatar")
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	fmt.Println("SetAvatar" + header.Filename)
+	filename := fmt.Sprintf("%d%s%s", USER.ID, time.Now().Format("20060102150405"), filepath.Ext(header.Filename))
+	dst := "avatars/" + filename
+	if err := c.SaveUploadedFile(header, dst); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	USER.Avatar = "localhost:8080/avatars/" + filename
+	res := DB.Save(&USER)
+	if res.Error != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": res.Error.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Avatar uploaded", "avatar": USER.Avatar})
 }
 
 // JWT Auth
@@ -175,6 +193,8 @@ func AuthMiddleware() gin.HandlerFunc {
 			c.Set("user_id", claims.UserID)
 			c.Set("email", claims.Email)
 			c.Next()
+
+			USER, _ = GetUserByEmail(claims.Email)
 		} else {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid token"})
 			c.Abort()
@@ -213,6 +233,8 @@ func Login(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Error generating token"})
 		return
 	}
+
+	USER = foundUser
 
 	c.JSON(http.StatusOK, gin.H{"message": "Login successful", "token": token})
 }
