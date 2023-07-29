@@ -67,7 +67,6 @@ func CreateUser(c *gin.Context) {
 		return
 	}
 
-	// Check for the presence of 'code' and 'price' fields
 	if user.Name == "" || user.Email == "" || user.Password == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Name, Email, and Password fields are required"})
 		return
