@@ -29,15 +29,13 @@ func RunRoutes(r *gin.Engine, db *gorm.DB) {
 	})
 
 	r.GET("/current-user", AuthMiddleware(), func(c *gin.Context) {
-		id, exists := c.Get("user_id")
-		if !exists {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "You are not logged in"})
+		user, err := GetCurrentUser(c)
+
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
 
-		var user User
-		DB.First(&user, id)
-		USER = user
 		c.JSON(http.StatusOK, gin.H{"id": user.ID, "email": user.Email, "avatar": user.Avatar, "created": user.CreatedAt})
 	})
 }

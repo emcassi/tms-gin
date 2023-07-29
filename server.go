@@ -20,8 +20,6 @@ func main() {
 	}
 
 	r := gin.Default()
-
 	RunRoutes(r, DB)
-
 	r.Run()
 }

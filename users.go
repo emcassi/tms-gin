@@ -29,10 +29,6 @@ type Claim struct {
 	jwt.StandardClaims
 }
 
-var (
-	USER User
-)
-
 func GetAllUsers(c *gin.Context) {
 	var users []User
 	DB.Find(&users)
@@ -43,19 +39,6 @@ func GetUser(c *gin.Context) {
 	var user User
 	DB.First(&user, c.Param("id"))
 	c.JSON(http.StatusOK, user)
-}
-
-func GetUserByEmail(email string) (User, error) {
-	var user User
-	if err := DB.First(&user, "email = ?", email).Error; err != nil {
-		fmt.Println(err)
-		if err == gorm.ErrRecordNotFound {
-			return User{}, errors.New("User not found")
-		} else {
-			return User{}, errors.New("failed to fetch user")
-		}
-	}
-	return user, nil
 }
 
 func CreateUser(c *gin.Context) {
@@ -125,21 +108,30 @@ func SetAvatar(c *gin.Context) {
 		return
 	}
 
-	filename := fmt.Sprintf("%d%s%s", USER.ID, time.Now().Format("20060102150405"), filepath.Ext(header.Filename))
+	user, err := GetCurrentUser(c)
+
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Create a unique filename
+	filename := fmt.Sprintf("%d%s%s", user.ID, time.Now().Format("20060102150405"), filepath.Ext(header.Filename))
 	dst := "avatars/" + filename
 	if err := c.SaveUploadedFile(header, dst); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	USER.Avatar = "localhost:8080/avatars/" + filename
-	res := DB.Save(&USER)
+	// Save the image
+	user.Avatar = "localhost:8080/avatars/" + filename
+	res := DB.Save(&user)
 	if res.Error != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": res.Error.Error()})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "Avatar uploaded", "avatar": USER.Avatar})
+	c.JSON(http.StatusOK, gin.H{"message": "Avatar uploaded", "avatar": user.Avatar})
 }
 
 // JWT Auth
@@ -192,8 +184,6 @@ func AuthMiddleware() gin.HandlerFunc {
 			c.Set("user_id", claims.UserID)
 			c.Set("email", claims.Email)
 			c.Next()
-
-			USER, _ = GetUserByEmail(claims.Email)
 		} else {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid token"})
 			c.Abort()
@@ -232,8 +222,6 @@ func Login(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Error generating token"})
 		return
 	}
-
-	USER = foundUser
 
 	c.JSON(http.StatusOK, gin.H{"message": "Login successful", "token": token})
 }
@@ -285,4 +273,28 @@ func HashPassword(password string) (string, error) {
 		return "", err
 	}
 	return string(hashedPassword), nil
+}
+
+func GetCurrentUser(c *gin.Context) (User, error) {
+	var user User
+	id, exists := c.Get("user_id")
+	if !exists {
+		return User{}, errors.New("you are not logged in")
+	}
+
+	DB.First(&user, id)
+	return user, nil
+}
+
+func GetUserByEmail(email string) (User, error) {
+	var user User
+	if err := DB.First(&user, "email = ?", email).Error; err != nil {
+		fmt.Println(err)
+		if err == gorm.ErrRecordNotFound {
+			return User{}, errors.New("User not found")
+		} else {
+			return User{}, errors.New("failed to fetch user")
+		}
+	}
+	return user, nil
 }
