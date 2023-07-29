@@ -3,11 +3,18 @@ package main
 import (
 	"errors"
 	"fmt"
+	"image"
+	"image/jpeg"
+	"image/png"
 	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
 	"time"
+
+	"github.com/emcassi/gin-tms/global"
+	"github.com/emcassi/gin-tms/models"
+	"github.com/emcassi/gin-tms/services"
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt"
@@ -15,34 +22,20 @@ import (
 	"gorm.io/gorm"
 )
 
-type User struct {
-	gorm.Model
-	Name     string `gorm:"not null" json:"name"`
-	Email    string `gorm:"not null;unique" json:"email"`
-	Password string `gorm:"not null" json:"password"`
-	Avatar   string `json:"avatar"`
-}
-
 type Claim struct {
 	UserID uint   `json:"user_id"`
 	Email  string `json:"email"`
 	jwt.StandardClaims
 }
 
-func GetAllUsers(c *gin.Context) {
-	var users []User
-	DB.Find(&users)
-	c.JSON(http.StatusOK, users)
-}
-
 func GetUser(c *gin.Context) {
-	var user User
-	DB.First(&user, c.Param("id"))
+	var user models.User
+	global.DB.First(&user, c.Param("id"))
 	c.JSON(http.StatusOK, user)
 }
 
 func CreateUser(c *gin.Context) {
-	var user User
+	var user models.User
 	err := c.BindJSON(&user)
 
 	if err != nil {
@@ -80,13 +73,13 @@ func CreateUser(c *gin.Context) {
 	// Store the hashed password in the user struct
 	user.Password = hashedPassword
 
-	DB.Create(&user)
+	global.DB.Create(&user)
 	c.JSON(http.StatusOK, user)
 }
 
 func DeleteUser(c *gin.Context) {
-	var user User
-	result := DB.Delete(&user, c.Param("id"))
+	var user models.User
+	result := global.DB.Delete(&user, c.Param("id"))
 
 	if result.Error != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete user"})
@@ -102,30 +95,71 @@ func DeleteUser(c *gin.Context) {
 }
 
 func SetAvatar(c *gin.Context) {
-	_, header, err := c.Request.FormFile("avatar")
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
 	user, err := GetCurrentUser(c)
 
+	file, header, err := c.Request.FormFile("avatar")
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
+	fileSize, err := services.GetFileSize(file)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Throw error if image is over 1MB
+	if fileSize > 1024*1024 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "image must be 1MB or smaller"})
+		return
+	}
+
+	// Decode the file to check if it's a valid image
+	img, format, err := image.Decode(file)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 	// Create a unique filename
 	filename := fmt.Sprintf("%d%s%s", user.ID, time.Now().Format("20060102150405"), filepath.Ext(header.Filename))
 	dst := "avatars/" + filename
-	if err := c.SaveUploadedFile(header, dst); err != nil {
+
+	// Save the image
+	outputFile, err := os.Create(dst)
+	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	defer outputFile.Close()
 
-	// Save the image
+	switch format {
+	case "jpeg":
+		err = jpeg.Encode(outputFile, img, nil)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Error encoding image"})
+			return
+		}
+	case "png":
+		err = png.Encode(outputFile, img)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Error encoding image"})
+		}
+	default:
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Only JPEG images are supported"})
+	}
+
+	// Delete the old avatar if it exists
+	if user.Avatar != "" {
+		err := os.Remove("avatars/" + filepath.Base(user.Avatar))
+		if err != nil {
+			fmt.Println(err.Error())
+		}
+	}
+
+	// Update the user's avatar field
 	user.Avatar = "localhost:8080/avatars/" + filename
-	res := DB.Save(&user)
+	res := global.DB.Save(&user)
 	if res.Error != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": res.Error.Error()})
 		return
@@ -193,7 +227,7 @@ func AuthMiddleware() gin.HandlerFunc {
 }
 
 func Login(c *gin.Context) {
-	var user User
+	var user models.User
 	err := c.BindJSON(&user)
 
 	if err != nil {
@@ -230,7 +264,7 @@ func Login(c *gin.Context) {
 
 func IsEmailUnique(email string) bool {
 	var count int64
-	DB.Model(&User{}).Where("email = ?", email).Count(&count)
+	global.DB.Model(&models.User{}).Where("email = ?", email).Count(&count)
 	return count == 0
 }
 
@@ -275,25 +309,25 @@ func HashPassword(password string) (string, error) {
 	return string(hashedPassword), nil
 }
 
-func GetCurrentUser(c *gin.Context) (User, error) {
-	var user User
+func GetCurrentUser(c *gin.Context) (models.User, error) {
+	var user models.User
 	id, exists := c.Get("user_id")
 	if !exists {
-		return User{}, errors.New("you are not logged in")
+		return models.User{}, errors.New("you are not logged in")
 	}
 
-	DB.First(&user, id)
+	global.DB.First(&user, id)
 	return user, nil
 }
 
-func GetUserByEmail(email string) (User, error) {
-	var user User
-	if err := DB.First(&user, "email = ?", email).Error; err != nil {
+func GetUserByEmail(email string) (models.User, error) {
+	var user models.User
+	if err := global.DB.First(&user, "email = ?", email).Error; err != nil {
 		fmt.Println(err)
 		if err == gorm.ErrRecordNotFound {
-			return User{}, errors.New("User not found")
+			return models.User{}, errors.New("user not found")
 		} else {
-			return User{}, errors.New("failed to fetch user")
+			return models.User{}, errors.New("failed to fetch user")
 		}
 	}
 	return user, nil

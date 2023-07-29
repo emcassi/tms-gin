@@ -1,4 +1,4 @@
-package main
+package global
 
 import (
 	"gorm.io/driver/sqlite"

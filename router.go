@@ -3,6 +3,8 @@ package main
 import (
 	"net/http"
 
+	"github.com/emcassi/gin-tms/controllers"
+
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
@@ -17,7 +19,7 @@ func RunRoutes(r *gin.Engine, db *gorm.DB) {
 	r.POST("/products", CreateProduct)
 
 	// Users
-	r.GET("/users", GetAllUsers)
+	r.GET("/users", controllers.GetAllUsers)
 	r.GET("/users/:id", GetUser)
 	r.POST("/users", CreateUser)
 	r.DELETE("/users/:id", DeleteUser)

@@ -3,19 +3,21 @@ package main
 import (
 	"net/http"
 
+	"github.com/emcassi/gin-tms/global"
+
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
 
 func GetAllProducts(c *gin.Context) {
 	var products []Product
-	DB.Find(&products)
+	global.DB.Find(&products)
 	c.JSON(http.StatusOK, products)
 }
 
 func GetProduct(c *gin.Context) {
 	var product Product
-	DB.First(&product, c.Param("id"))
+	global.DB.First(&product, c.Param("id"))
 	c.JSON(http.StatusOK, product)
 }
 
@@ -34,12 +36,12 @@ func CreateProduct(c *gin.Context) {
 		return
 	}
 
-	if !isCodeUnique(DB, product.Code) {
+	if !isCodeUnique(global.DB, product.Code) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Code must be unique"})
 		return
 	}
 
-	DB.Create(&product)
+	global.DB.Create(&product)
 	c.JSON(http.StatusOK, product)
 }
 

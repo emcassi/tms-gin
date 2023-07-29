@@ -1,6 +1,9 @@
 package main
 
 import (
+	"github.com/emcassi/gin-tms/global"
+	"github.com/emcassi/gin-tms/models"
+
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
@@ -13,13 +16,13 @@ type Product struct {
 
 func main() {
 
-	err := DB.AutoMigrate(&Product{}, &User{})
+	err := global.DB.AutoMigrate(&Product{}, &models.User{})
 
 	if err != nil {
 		panic("failed to migrate database: " + err.Error())
 	}
 
 	r := gin.Default()
-	RunRoutes(r, DB)
+	RunRoutes(r, global.DB)
 	r.Run()
 }
